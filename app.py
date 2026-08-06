@@ -1,274 +1,574 @@
-import streamlit as st
-import pandas as pd
-
-# ------------------------------------------------------
-# CONFIGURACIÓN DE LA PÁGINA
-# ------------------------------------------------------
-st.set_page_config(
-    page_title="Estanco Analytics",
-    page_icon="🚬",
-    layout="wide",
-)
-
-st.title("Estanco Analytics")
-st.markdown(
-    """
-Aplicación profesional para el análisis de ventas de un estanco.
-
-- Suba un CSV con sus datos reales o utilice el dataset de ejemplo.
-- Analice ingresos, márgenes, beneficios y rotación por producto y categoría.
-- Explore dashboards interactivos mediante pestañas y desplegables.
-"""
-)
-
-# ------------------------------------------------------
-# FUNCIONES AUXILIARES
-# ------------------------------------------------------
-@st.cache_data
-def generar_datos_ejemplo() -> pd.DataFrame:
-    data = {
-        "producto": [
-            "Marlboro Rojo 20", "Camel Blue 20", "Lucky Strike 20",
-            "Tabaco Liar Pueblo", "Puros Montecristo", "Sellos Correos",
-            "Mecheros BIC", "Papel Smoking", "Vaper Frutal",
-        ],
-        "categoria": [
-            "tabaco_cajetilla", "tabaco_cajetilla", "tabaco_cajetilla",
-            "tabaco_rollo", "puros", "sellos",
-            "otros", "otros", "otros",
-        ],
-        "unidades_vendidas": [
-            1200, 900, 600,
-            300, 150, 400,
-            250, 500, 200,
-        ],
-        "precio_venta_unitario": [
-            5.50, 5.30, 5.40,
-            8.00, 9.50, 0.70,
-            1.50, 1.20, 8.50,
-        ],
-        "stock_medio": [
-            150, 120, 100,
-            40, 20, 60,
-            30, 50, 25,
-        ],
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Estanco Analytics Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Estilos básicos profesionales -->
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      background-color: #0f172a;
+      color: #e5e7eb;
     }
-    df = pd.DataFrame(data)
-    return df
-
-
-def preparar_df(df: pd.DataFrame) -> pd.DataFrame:
-    # Ingresos
-    if "ingresos" not in df.columns:
-        df["ingresos"] = df["unidades_vendidas"] * df["precio_venta_unitario"]
-
-    # Márgenes estándar por categoría
-    margenes = {
-        "tabaco_cajetilla": 0.085,
-        "tabaco_rollo": 0.09,
-        "puros": 0.09,
-        "sellos": 0.04,
-        "otros": 0.20,
+    header {
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid #1f2937;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(90deg, #0f172a, #111827);
     }
-    df["margen_pct"] = df["categoria"].map(margenes).fillna(0.20)
+    header h1 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
+    main {
+      padding: 1.5rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .card {
+      background-color: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 0.75rem;
+      padding: 1rem;
+    }
+    .card h2 {
+      margin: 0 0 0.5rem 0;
+      font-size: 1rem;
+      color: #9ca3af;
+    }
+    .metric {
+      font-size: 1.4rem;
+      font-weight: 600;
+    }
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .tab-button {
+      padding: 0.5rem 1rem;
+      border-radius: 999px;
+      border: 1px solid #1f2937;
+      background-color: #111827;
+      color: #e5e7eb;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .tab-button.active {
+      background-color: #2563eb;
+      border-color: #2563eb;
+    }
+    .section {
+      margin-bottom: 1.5rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    th, td {
+      padding: 0.5rem;
+      border-bottom: 1px solid #1f2937;
+    }
+    th {
+      text-align: left;
+      background-color: #030712;
+      color: #9ca3af;
+    }
+    tr:nth-child(even) {
+      background-color: #020617;
+    }
+    select, input[type="file"] {
+      background-color: #020617;
+      color: #e5e7eb;
+      border: 1px solid #1f2937;
+      border-radius: 999px;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+    canvas {
+      width: 100%;
+      max-height: 300px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      background-color: #1f2937;
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+  </style>
+  <!-- Chart.js para gráficos -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <header>
+    <h1>🚬 Estanco Analytics Dashboard</h1>
+    <div>
+      <input type="file" id="fileInput" accept=".csv" />
+      <span class="badge">Sube tu CSV de ventas</span>
+    </div>
+  </header>
+  <main>
+    <!-- KPIs -->
+    <section class="grid-3">
+      <div class="card">
+        <h2>Ingresos totales</h2>
+        <div id="kpiIngresos" class="metric">– €</div>
+      </div>
+      <div class="card">
+        <h2>Beneficio estimado</h2>
+        <div id="kpiBeneficio" class="metric">– €</div>
+      </div>
+      <div class="card">
+        <h2>Rotación media</h2>
+        <div id="kpiRotacion" class="metric">– veces</div>
+      </div>
+    </section>
 
-    # Beneficio estimado
-    df["beneficio"] = df["ingresos"] * df["margen_pct"]
+    <!-- Tabs -->
+    <section class="section">
+      <div class="tabs">
+        <button class="tab-button active" data-tab="resumen">Resumen</button>
+        <button class="tab-button" data-tab="productos">Productos</button>
+        <button class="tab-button" data-tab="categorias">Categorías</button>
+        <button class="tab-button" data-tab="graficos">Gráficos</button>
+      </div>
+    </section>
 
-    # Rotación de producto
-    df["rotacion"] = df["unidades_vendidas"] / df["stock_medio"]
+    <!-- Contenido de tabs -->
+    <section id="tabResumen" class="section">
+      <div class="card">
+        <h2>Datos de ventas (tabla)</h2>
+        <div id="tablaResumen"></div>
+      </div>
+    </section>
 
-    return df
+    <section id="tabProductos" class="section" style="display:none">
+      <div class="card">
+        <h2>Ranking de productos</h2>
+        <div class="controls">
+          <label>Métrica:
+            <select id="rankingMetric">
+              <option value="unidades_vendidas">Unidades vendidas</option>
+              <option value="ingresos">Ingresos</option>
+              <option value="beneficio">Beneficio</option>
+              <option value="rotacion">Rotación</option>
+            </select>
+          </label>
+          <label>Top N:
+            <select id="rankingTop">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+            </select>
+          </label>
+        </div>
+        <div id="tablaProductos"></div>
+      </div>
+    </section>
 
-# ------------------------------------------------------
-# SIDEBAR: CONFIGURACIÓN
-# ------------------------------------------------------
-st.sidebar.header("Configuración de datos")
+    <section id="tabCategorias" class="section" style="display:none">
+      <div class="card">
+        <h2>Resumen por categoría</h2>
+        <div id="tablaCategorias"></div>
+      </div>
+    </section>
 
-origen_datos = st.sidebar.radio(
-    "Origen de datos",
-    ("CSV propio", "Datos de ejemplo"),
-    index=1,
-)
+    <section id="tabGraficos" class="section" style="display:none">
+      <div class="card">
+        <h2>Gráfico por categoría</h2>
+        <div class="controls">
+          <label>Métrica:
+            <select id="grafCategoriaMetric">
+              <option value="ingresos_total">Ingresos</option>
+              <option value="beneficio_total">Beneficio</option>
+              <option value="unidades_total">Unidades</option>
+            </select>
+          </label>
+        </div>
+        <canvas id="chartCategorias"></canvas>
+      </div>
 
-archivo_csv = None
-if origen_datos == "CSV propio":
-    archivo_csv = st.sidebar.file_uploader(
-        "Suba el CSV de ventas del estanco", type=["csv"]
-    )
+      <div class="card" style="margin-top:1rem">
+        <h2>Gráfico de productos</h2>
+        <div class="controls">
+          <label>Métrica:
+            <select id="grafProductosMetric">
+              <option value="unidades_vendidas">Unidades vendidas</option>
+              <option value="ingresos">Ingresos</option>
+              <option value="beneficio">Beneficio</option>
+              <option value="rotacion">Rotación</option>
+            </select>
+          </label>
+          <label>Top N:
+            <select id="grafProductosTop">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+            </select>
+          </label>
+        </div>
+        <canvas id="chartProductos"></canvas>
+      </div>
+    </section>
 
-st.sidebar.markdown("---")
+    <!-- Comentario automático -->
+    <section class="section">
+      <div class="card">
+        <h2>Comentario automático del negocio</h2>
+        <p id="comentarioNegocio">
+          Suba un CSV para ver el análisis del estanco.
+        </p>
+      </div>
+    </section>
+  </main>
 
-# ------------------------------------------------------
-# CARGA DE DATOS
-# ------------------------------------------------------
-if origen_datos == "CSV propio" and archivo_csv is not None:
-    try:
-        df_raw = pd.read_csv(archivo_csv)
-    except Exception as e:
-        st.error(f"Error al leer el CSV: {e}")
-        st.stop()
-else:
-    df_raw = generar_datos_ejemplo()
-    st.info(
-        "Usando datos de ejemplo. "
-        "Cuando tenga su CSV, seleccione 'CSV propio' en la barra lateral."
-    )
+  <!-- Lógica JS -->
+  <script>
+    let datos = [];
 
-# Columnas necesarias
-columnas_necesarias = [
-    "producto", "categoria", "unidades_vendidas",
-    "precio_venta_unitario", "stock_medio",
-]
-faltan = [c for c in columnas_necesarias if c not in df_raw.columns]
+    // Márgenes estándar por categoría (como en la app previa)
+    const MARGENES = {
+      tabaco_cajetilla: 0.085,
+      tabaco_rollo: 0.09,
+      puros: 0.09,
+      sellos: 0.04,
+      otros: 0.20
+    };
 
-if faltan:
-    st.warning(
-        "Las siguientes columnas necesarias no se encuentran en el dataset: "
-        + ", ".join(faltan)
-        + "\n\nAdjunte un CSV con estas columnas o adapte el código."
-    )
+    // Función simple para parsear CSV (cabeceras + filas)
+    function parseCSV(text) {
+      const lines = text.trim().split("\\n");
+      const headers = lines[0].split(",").map(h => h.trim());
+      const rows = lines.slice(1);
+      return rows.map(line => {
+        const values = line.split(",").map(v => v.trim());
+        const row = {};
+        headers.forEach((h, i) => {
+          row[h] = values[i];
+        });
+        return row;
+      });
+    }
 
-df = df_raw.copy()
-df = preparar_df(df)
+    // Calcular métricas
+    function prepararDatos(raw) {
+      return raw.map(row => {
+        const unidades = Number(row.unidades_vendidas || 0);
+        const precio = Number(row.precio_venta_unitario || 0);
+        const stock = Number(row.stock_medio || 0);
+        const ingresos = unidades * precio;
+        const margenPct = MARGENES[row.categoria] ?? 0.20;
+        const beneficio = ingresos * margenPct;
+        const rotacion = stock > 0 ? unidades / stock : 0;
 
-if df.empty:
-    st.warning("No hay datos disponibles.")
-    st.stop()
+        return {
+          producto: row.producto || "",
+          categoria: row.categoria || "",
+          unidades_vendidas: unidades,
+          precio_venta_unitario: precio,
+          stock_medio: stock,
+          ingresos,
+          margen_pct: margenPct,
+          beneficio,
+          rotacion
+        };
+      });
+    }
 
-# ------------------------------------------------------
-# KPIs
-# ------------------------------------------------------
-st.markdown("---")
+    // Renderizar tabla genérica
+    function renderTable(containerId, rows, columns) {
+      const container = document.getElementById(containerId);
+      if (!rows || rows.length === 0) {
+        container.innerHTML = "<p>No hay datos.</p>";
+        return;
+      }
+      let html = "<table><thead><tr>";
+      columns.forEach(col => {
+        html += `<th>${col.label}</th>`;
+      });
+      html += "</tr></thead><tbody>";
+      rows.forEach(r => {
+        html += "<tr>";
+        columns.forEach(col => {
+          html += `<td>${col.format ? col.format(r[col.key]) : r[col.key]}</td>`;
+        });
+        html += "</tr>";
+      });
+      html += "</tbody></table>";
+      container.innerHTML = html;
+    }
 
-ingresos_totales = float(df["ingresos"].sum())
-beneficio_total = float(df["beneficio"].sum())
-rotacion_media = float(df["rotacion"].mean())
+    // KPIs
+    function actualizarKPIs() {
+      const ingresosTotales = datos.reduce((acc, r) => acc + r.ingresos, 0);
+      const beneficioTotal = datos.reduce((acc, r) => acc + r.beneficio, 0);
+      const rotacionMedia = datos.length
+        ? datos.reduce((acc, r) => acc + r.rotacion, 0) / datos.length
+        : 0;
 
-col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
-col_kpi1.metric("Ingresos totales", f"{ingresos_totales:,.2f} €")
-col_kpi2.metric("Beneficio estimado", f"{beneficio_total:,.2f} €")
-col_kpi3.metric("Rotación media", f"{rotacion_media:,.2f} veces")
+      document.getElementById("kpiIngresos").textContent =
+        ingresosTotales.toLocaleString("es-ES", { maximumFractionDigits: 2 }) + " €";
+      document.getElementById("kpiBeneficio").textContent =
+        beneficioTotal.toLocaleString("es-ES", { maximumFractionDigits: 2 }) + " €";
+      document.getElementById("kpiRotacion").textContent =
+        rotacionMedia.toLocaleString("es-ES", { maximumFractionDigits: 2 }) + " veces";
+    }
 
-# ------------------------------------------------------
-# PESTAÑAS
-# ------------------------------------------------------
-tab_resumen, tab_productos, tab_categorias, tab_graficos = st.tabs(
-    ["Resumen", "Productos", "Categorías", "Gráficos"]
-)
+    // Tablas
+    function actualizarTablas() {
+      // Resumen
+      renderTable("tablaResumen", datos, [
+        { key: "producto", label: "Producto" },
+        { key: "categoria", label: "Categoría" },
+        { key: "unidades_vendidas", label: "Unidades" },
+        { key: "precio_venta_unitario", label: "Precio (€)" },
+        { key: "ingresos", label: "Ingresos (€)", format: v => v.toLocaleString("es-ES", { maximumFractionDigits: 2 }) },
+        { key: "beneficio", label: "Beneficio (€)", format: v => v.toLocaleString("es-ES", { maximumFractionDigits: 2 }) },
+        { key: "rotacion", label: "Rotación", format: v => v.toLocaleString("es-ES", { maximumFractionDigits: 2 }) }
+      ]);
 
-# Resumen
-with tab_resumen:
-    st.subheader("Tabla completa de datos")
-    st.dataframe(df, use_container_width=True)
+      // Ranking productos
+      const metric = document.getElementById("rankingMetric").value;
+      const topN = Number(document.getElementById("rankingTop").value);
+      const ordenados = [...datos].sort((a, b) => b[metric] - a[metric]).slice(0, topN);
+      renderTable("tablaProductos", ordenados, [
+        { key: "producto", label: "Producto" },
+        { key: "categoria", label: "Categoría" },
+        { key: "unidades_vendidas", label: "Unidades" },
+        { key: "ingresos", label: "Ingresos (€)", format: v => v.toLocaleString("es-ES", { maximumFractionDigits: 2 }) },
+        { key: "beneficio", label: "Beneficio (€)", format: v => v.toLocaleString("es-ES", { maximumFractionDigits: 2 }) },
+        { key: "rotacion", label: "Rotación", format: v => v.toLocaleString("es-ES", { maximumFractionDigits: 2 }) }
+      ]);
 
-    st.markdown("### Resumen por categoría")
-    agrupado = df.groupby("categoria").agg(
-        ingresos_total=("ingresos", "sum"),
-        beneficio_total=("beneficio", "sum"),
-        unidades_total=("unidades_vendidas", "sum"),
-        rotacion_media=("rotacion", "mean"),
-    )
-    st.dataframe(agrupado, use_container_width=True)
+      // Categorías
+      const categorias = {};
+      datos.forEach(r => {
+        if (!categorias[r.categoria]) {
+          categorias[r.categoria] = {
+            categoria: r.categoria,
+            ingresos_total: 0,
+            beneficio_total: 0,
+            unidades_total: 0,
+            rotacion_media: 0,
+            conteo: 0
+          };
+        }
+        const c = categorias[r.categoria];
+        c.ingresos_total += r.ingresos;
+        c.beneficio_total += r.beneficio;
+        c.unidades_total += r.unidades_vendidas;
+        c.rotacion_media += r.rotacion;
+        c.conteo += 1;
+      });
+      const filasCat = Object.values(categorias).map(c => ({
+        categoria: c.categoria,
+        ingresos_total: c.ingresos_total,
+        beneficio_total: c.beneficio_total,
+        unidades_total: c.unidades_total,
+        rotacion_media: c.conteo ? c.rotacion_media / c.conteo : 0
+      }));
+      renderTable("tablaCategorias", filasCat, [
+        { key: "categoria", label: "Categoría" },
+        { key: "ingresos_total", label: "Ingresos (€)", format: v => v.toLocaleString("es-ES", { maximumFractionDigits: 2 }) },
+        { key: "beneficio_total", label: "Beneficio (€)", format: v => v.toLocaleString("es-ES", { maximumFractionDigits: 2 }) },
+        { key: "unidades_total", label: "Unidades" },
+        { key: "rotacion_media", label: "Rotación media", format: v => v.toLocaleString("es-ES", { maximumFractionDigits: 2 }) }
+      ]);
 
-# Productos
-with tab_productos:
-    st.subheader("Ranking de productos")
+      // Comentario negocio
+      if (filasCat.length > 0) {
+        const topIngresos = filasCat.reduce((a, b) => (b.ingresos_total > a.ingresos_total ? b : a), filasCat[0]);
+        const topBeneficio = filasCat.reduce((a, b) => (b.beneficio_total > a.beneficio_total ? b : a), filasCat[0]);
+        const comentario = `
+El estanco genera unos ingresos totales aproximados de ${datos.reduce((acc, r) => acc + r.ingresos, 0).toLocaleString("es-ES", { maximumFractionDigits: 2 })} €,
+con un beneficio estimado de ${datos.reduce((acc, r) => acc + r.beneficio, 0).toLocaleString("es-ES", { maximumFractionDigits: 2 })} €.
 
-    criterio_ranking = st.selectbox(
-        "Ordenar ranking por",
-        options=["unidades_vendidas", "ingresos", "beneficio", "rotacion"],
-        index=1,
-    )
+La categoría con mayor peso en ingresos es "${topIngresos.categoria}", mientras que la que más contribuye al beneficio es "${topBeneficio.categoria}".
+La rotación media indica cuántas veces se renueva el stock; una rotación alta sugiere productos de venta rápida y una rotación baja apunta a artículos que permanecen más tiempo en estantería.
 
-    top_n = st.slider(
-        "Número de productos a mostrar", min_value=5, max_value=20, value=10
-    )
+Con esta información se pueden identificar oportunidades para potenciar referencias de alta rentabilidad, reducir productos de baja rotación y optimizar la mezcla de complementos para aumentar el margen global del estanco.
+`;
+        document.getElementById("comentarioNegocio").textContent = comentario;
+      }
+    }
 
-    df_rank = df.sort_values(criterio_ranking, ascending=False).head(top_n)
-    st.dataframe(
-        df_rank[
-            ["producto", "categoria", "unidades_vendidas",
-             "ingresos", "beneficio", "rotacion"]
-        ],
-        use_container_width=True,
-    )
+    // Gráficos
+    let chartCategorias = null;
+    let chartProductos = null;
 
-# Categorías
-with tab_categorias:
-    st.subheader("Análisis por categoría")
+    function actualizarGraficos() {
+      const categorias = {};
+      datos.forEach(r => {
+        if (!categorias[r.categoria]) {
+          categorias[r.categoria] = {
+            ingresos_total: 0,
+            beneficio_total: 0,
+            unidades_total: 0
+          };
+        }
+        const c = categorias[r.categoria];
+        c.ingresos_total += r.ingresos;
+        c.beneficio_total += r.beneficio;
+        c.unidades_total += r.unidades_vendidas;
+      });
+      const filasCat = Object.entries(categorias).map(([cat, v]) => ({
+        categoria: cat,
+        ...v
+      }));
 
-    agrupado_cat = df.groupby("categoria").agg(
-        ingresos_total=("ingresos", "sum"),
-        beneficio_total=("beneficio", "sum"),
-        unidades_total=("unidades_vendidas", "sum"),
-        rotacion_media=("rotacion", "mean"),
-    )
-    st.dataframe(agrupado_cat, use_container_width=True)
+      const metricCat = document.getElementById("grafCategoriaMetric").value;
+      const labelsCat = filasCat.map(f => f.categoria);
+      const dataCat = filasCat.map(f => f[metricCat]);
 
-# Gráficos
-with tab_graficos:
-    st.subheader("Dashboard gráfico")
+      const ctxCat = document.getElementById("chartCategorias").getContext("2d");
+      if (chartCategorias) chartCategorias.destroy();
+      chartCategorias = new Chart(ctxCat, {
+        type: "bar",
+        data: {
+          labels: labelsCat,
+          datasets: [
+            {
+              label: metricCat,
+              data: dataCat,
+              backgroundColor: "#2563eb"
+            }
+          ]
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: "#9ca3af" } },
+            y: { ticks: { color: "#9ca3af" } }
+          }
+        }
+      });
 
-    agrupado_graf = df.groupby("categoria").agg(
-        ingresos_total=("ingresos", "sum"),
-        beneficio_total=("beneficio", "sum"),
-        unidades_total=("unidades_vendidas", "sum"),
-    )
+      const metricProd = document.getElementById("grafProductosMetric").value;
+      const topN = Number(document.getElementById("grafProductosTop").value);
+      const ordenados = [...datos].sort((a, b) => b[metricProd] - a[metricProd]).slice(0, topN);
 
-    st.markdown("#### Gráfico de barras por categoría")
-    variable_barras = st.selectbox(
-        "Métrica",
-        options=["ingresos_total", "beneficio_total", "unidades_total"],
-        index=0,
-    )
-    st.bar_chart(agrupado_graf[variable_barras])
+      const labelsProd = ordenados.map(r => r.producto);
+      const dataProd = ordenados.map(r => r[metricProd]);
 
-    st.markdown("---")
-    st.markdown("#### Gráfico de productos")
+      const ctxProd = document.getElementById("chartProductos").getContext("2d");
+      if (chartProductos) chartProductos.destroy();
+      chartProductos = new Chart(ctxProd, {
+        type: "bar",
+        data: {
+          labels: labelsProd,
+          datasets: [
+            {
+              label: metricProd,
+              data: dataProd,
+              backgroundColor: "#22c55e"
+            }
+          ]
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: "#9ca3af" } },
+            y: { ticks: { color: "#9ca3af" } }
+          }
+        }
+      });
+    }
 
-    variable_productos = st.selectbox(
-        "Métrica para productos",
-        options=["unidades_vendidas", "ingresos", "beneficio", "rotacion"],
-        index=1,
-    )
+    // Tabs
+    document.querySelectorAll(".tab-button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tab = btn.dataset.tab;
+        document.querySelectorAll(".tab-button").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById("tabResumen").style.display = tab === "resumen" ? "" : "none";
+        document.getElementById("tabProductos").style.display = tab === "productos" ? "" : "none";
+        document.getElementById("tabCategorias").style.display = tab === "categorias" ? "" : "none";
+        document.getElementById("tabGraficos").style.display = tab === "graficos" ? "" : "none";
+      });
+    });
 
-    top_n_prod = st.slider(
-        "Número de productos en el gráfico", min_value=5, max_value=20, value=10
-    )
+    // Eventos de controles
+    document.getElementById("rankingMetric").addEventListener("change", () => {
+      actualizarTablas();
+    });
+    document.getElementById("rankingTop").addEventListener("change", () => {
+      actualizarTablas();
+    });
+    document.getElementById("grafCategoriaMetric").addEventListener("change", () => {
+      actualizarGraficos();
+    });
+    document.getElementById("grafProductosMetric").addEventListener("change", () => {
+      actualizarGraficos();
+    });
+    document.getElementById("grafProductosTop").addEventListener("change", () => {
+      actualizarGraficos();
+    });
 
-    df_top_prod = df.sort_values(variable_productos, ascending=False).head(top_n_prod)
-    df_top_prod_plot = df_top_prod.set_index("producto")
-    st.bar_chart(df_top_prod_plot[variable_productos])
+    // Subida de CSV
+    document.getElementById("fileInput").addEventListener("change", e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = event => {
+        const raw = parseCSV(event.target.result);
+        datos = prepararDatos(raw);
+        actualizarKPIs();
+        actualizarTablas();
+        actualizarGraficos();
+      };
+      reader.readAsText(file, "UTF-8");
+    });
 
-# Comentario final
-st.markdown("---")
-st.subheader("Comentario automático del negocio")
-
-agrupado_final = df.groupby("categoria").agg(
-    ingresos_total=("ingresos", "sum"),
-    beneficio_total=("beneficio", "sum"),
-)
-categoria_top_ingresos = agrupado_final["ingresos_total"].idxmax()
-categoria_top_beneficio = agrupado_final["beneficio_total"].idxmax()
-
-st.write(
-    f"El estanco genera unos ingresos totales aproximados de "
-    f"{ingresos_totales:,.2f} €, con un beneficio estimado de "
-    f"{beneficio_total:,.2f} €."
-)
-st.write(
-    f"La categoría con mayor peso en ingresos es **{categoria_top_ingresos}**, "
-    f"mientras que la que más contribuye al beneficio es "
-    f"**{categoria_top_beneficio}**."
-)
-st.write(
-    "La rotación media indica cuántas veces se renueva el stock en el periodo; "
-    "una rotación alta sugiere productos de venta rápida y una rotación baja "
-    "apunta a artículos que permanecen más tiempo en estantería."
-)
-st.write(
-    "Con esta información se pueden identificar oportunidades para potenciar "
-    "referencias de alta rentabilidad, reducir productos de baja rotación y "
-    "optimizar la mezcla de complementos para aumentar el margen global."
-)
+    // Cargar datos de ejemplo al iniciar (opcional)
+    const datosEjemplo = prepararDatos([
+      {
+        producto: "Marlboro Rojo 20",
+        categoria: "tabaco_cajetilla",
+        unidades_vendidas: 1200,
+        precio_venta_unitario: 5.5,
+        stock_medio: 150
+      },
+      {
+        producto: "Camel Blue 20",
+        categoria: "tabaco_cajetilla",
+        unidades_vendidas: 900,
+        precio_venta_unitario: 5.3,
+        stock_medio: 120
+      },
+      {
+        producto: "Mecheros BIC",
+        categoria: "otros",
+        unidades_vendidas: 250,
+        precio_venta_unitario: 1.5,
+        stock_medio: 30
+      }
+    ]);
+    datos = datosEjemplo;
+    actualizarKPIs();
+    actualizarTablas();
+    actualizarGraficos();
+  </script>
+</body>
+</html>
